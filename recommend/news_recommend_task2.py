@@ -68,7 +68,7 @@ def get_all_click_sample(data_path, sample_nums=10000):
 
 # 读取点击数据，这里分成线上和线下，如果是为了获取线上提交结果应该讲测试集中的点击数据合并到总的数据中
 # 如果是为了线下验证模型的有效性或者特征的有效性，可以只使用训练集
-def get_all_click_df(data_path='./data_raw/', offline=True):
+def get_all_click_df(data_path, offline=True):
     if offline:
         all_click = pd.read_csv(data_path + 'train_click_log.csv')
     else:
@@ -109,10 +109,10 @@ def get_item_emb_dict(data_path):
 max_min_scaler = lambda x: (x - np.min(x)) / (np.max(x) - np.min(x))
 
 # 采样数据
-# all_click_df = get_all_click_sample(data_path)
+all_click_df = get_all_click_sample(data_path)
 
 # 全量训练集
-all_click_df = get_all_click_df(offline=False)
+# all_click_df = get_all_click_df(offline=False)
 
 # 对时间戳进行归一化,用于在关联规则的时候计算权重
 all_click_df['click_timestamp'] = all_click_df[['click_timestamp']].apply(max_min_scaler)
@@ -227,7 +227,7 @@ def get_item_topk_click(click_df, k):
     return topk_click
 
 
-# 定义多路召回字典¶
+# 定义多路召回字典
 # 获取文章的属性信息，保存成字典的形式方便查询
 item_type_dict, item_words_dict, item_created_time_dict = get_item_info_dict(item_info_df)
 
@@ -294,7 +294,7 @@ def itemcf_sim(df, item_created_time_dict):
             item_cnt[i] += 1
             i2i_sim.setdefault(i, {})
             for loc2, (j, j_click_time) in enumerate(item_time_list):
-                if (i == j):
+                if i == j:
                     continue
 
                 # 考虑文章的正向顺序点击和反向顺序点击
@@ -382,9 +382,11 @@ u2u_sim = usercf_sim(all_click_df, user_activate_degree_dict)
 """item embedding sim
 使用Embedding计算item之间的相似度是为了后续冷启动的时候可以获取未出现在点击数据中的文章，后面有对冷启动专门的介绍，这里简单的说一下faiss。
 
-aiss是Facebook的AI团队开源的一套用于做聚类或者相似性搜索的软件库，底层是用C++实现。Faiss因为超级优越的性能，被广泛应用于推荐相关的业务当中.
+faiss是Facebook的AI团队开源的一套用于做聚类或者相似性搜索的软件库，底层是用C++实现。Faiss因为超级优越的性能，被广泛应用于推荐相关的业务当中.
 
-faiss工具包一般使用在推荐系统中的向量召回部分。在做向量召回的时候要么是u2u,u2i或者i2i，这里的u和i指的是user和item.我们知道在实际的场景中user和item的数量都是海量的，我们最容易想到的基于向量相似度的召回就是使用两层循环遍历user列表或者item列表计算两个向量的相似度，但是这样做在面对海量数据是不切实际的，faiss就是用来加速计算某个查询向量最相似的topk个索引向量。
+faiss工具包一般使用在推荐系统中的向量召回部分。在做向量召回的时候要么是u2u,u2i或者i2i，这里的u和i指的是user和item.
+我们知道在实际的场景中user和item的数量都是海量的，我们最容易想到的基于向量相似度的召回就是使用两层循环遍历user列表或者item列表计算两个向量的相似度，
+但是这样做在面对海量数据是不切实际的，faiss就是用来加速计算某个查询向量最相似的topk个索引向量。
 
 faiss查询的原理：
 
@@ -417,7 +419,7 @@ def embdding_sim(click_df, item_emb_df, save_path, topk):
 
     # 文章索引与文章id的字典映射
     item_idx_2_rawid_dict = dict(zip(item_emb_df.index, item_emb_df['article_id']))
-
+    print(item_idx_2_rawid_dict.get(-1))
     item_emb_cols = [x for x in item_emb_df.columns if 'emb' in x]
     item_emb_np = np.ascontiguousarray(item_emb_df[item_emb_cols].values, dtype=np.float32)
     # 向量进行单位化
@@ -428,7 +430,7 @@ def embdding_sim(click_df, item_emb_df, save_path, topk):
     item_index.add(item_emb_np)
     # 相似度查询，给每个索引位置上的向量返回topk个item以及相似度
     sim, idx = item_index.search(item_emb_np, topk)  # 返回的是列表
-
+    print(idx)
     # 将向量检索的结果保存成原始id的对应关系
     item_sim_dict = collections.defaultdict(dict)
     for target_idx, sim_value_list, rele_idx_list in tqdm(zip(range(len(item_emb_np)), sim, idx)):
@@ -458,7 +460,9 @@ Youtube DNN 召回
 基于用户的召回
 用户的协同过滤
 用户embedding
-上面的各种召回方式一部分在基于用户已经看得文章的基础上去召回与这些文章相似的一些文章， 而这个相似性的计算方式不同， 就得到了不同的召回方式， 比如文章的协同过滤， 文章内容的embedding等。还有一部分是根据用户的相似性进行推荐，对于某用户推荐与其相似的其他用户看过的文章，比如用户的协同过滤和用户embedding。 还有一种思路是类似矩阵分解的思路，先计算出用户和文章的embedding之后，就可以直接算用户和文章的相似度， 根据这个相似度进行推荐， 比如YouTube DNN。 我们下面详细来看一下每一个召回方法：
+上面的各种召回方式一部分在基于用户已经看得文章的基础上去召回与这些文章相似的一些文章， 而这个相似性的计算方式不同， 就得到了不同的召回方式， 比如文章的协同过滤， 
+文章内容的embedding等。还有一部分是根据用户的相似性进行推荐，对于某用户推荐与其相似的其他用户看过的文章，比如用户的协同过滤和用户embedding。 
+还有一种思路是类似矩阵分解的思路，先计算出用户和文章的embedding之后，就可以直接算用户和文章的相似度， 根据这个相似度进行推荐， 比如YouTube DNN。 我们下面详细来看一下每一个召回方法：
 """
 
 
@@ -688,6 +692,7 @@ def item_based_recommend(user_id, user_item_time_dict, i2i_sim, sim_item_topk, r
 
     return item_rank
 
+
 # itemcf sim召回¶
 # 先进行itemcf召回, 为了召回评估，所以提取最后一次点击
 
@@ -718,7 +723,7 @@ if metric_recall:
     # 召回效果评估
     metrics_recall(user_multi_recall_dict['itemcf_sim_itemcf_recall'], trn_last_click_df, topk=recall_item_num)
 
-#embedding sim 召回¶
+# embedding sim 召回¶
 # 这里是为了召回评估，所以提取最后一次点击
 if metric_recall:
     trn_hist_click_df, trn_last_click_df = get_hist_and_last_click(all_click_df)
@@ -815,7 +820,7 @@ def user_based_recommend(user_id, user_item_time_dict, u2u_sim, sim_user_topk, r
     return items_rank
 
 
-#usercf sim召回
+# usercf sim召回
 # 这里是为了召回评估，所以提取最后一次点击
 # 由于usercf中计算user之间的相似度的过程太费内存了，全量数据这里就没有跑，跑了一个采样之后的数据
 if metric_recall:
@@ -842,7 +847,6 @@ pickle.dump(user_recall_items_dict, open(save_path + 'usercf_u2u2i_recall.pkl', 
 if metric_recall:
     # 召回效果评估
     metrics_recall(user_recall_items_dict, trn_last_click_df, topk=recall_item_num)
-
 
 """
 user embedding sim召回
@@ -883,13 +887,14 @@ def u2u_embdding_sim(click_df, user_emb_dict, save_path, topk):
     pickle.dump(user_sim_dict, open(save_path + 'youtube_u2u_sim.pkl', 'wb'))
     return user_sim_dict
 
+
 # 读取YoutubeDNN过程中产生的user embedding, 然后使用faiss计算用户之间的相似度
 # 这里需要注意，这里得到的user embedding其实并不是很好，因为YoutubeDNN中使用的是用户点击序列来训练的user embedding,
 # 如果序列普遍都比较短的话，其实效果并不是很好
 user_emb_dict = pickle.load(open(save_path + 'user_youtube_emb.pkl', 'rb'))
 u2u_sim = u2u_embdding_sim(all_click_df, user_emb_dict, save_path, topk=10)
 
-#通过YoutubeDNN得到的user_embedding
+# 通过YoutubeDNN得到的user_embedding
 # 使用召回评估函数验证当前召回方式的效果
 if metric_recall:
     trn_hist_click_df, trn_last_click_df = get_hist_and_last_click(all_click_df)
@@ -943,15 +948,16 @@ trn_hist_click_df = all_click_df
 
 user_recall_items_dict = collections.defaultdict(dict)
 user_item_time_dict = get_user_item_time(trn_hist_click_df)
-i2i_sim = pickle.load(open(save_path + 'emb_i2i_sim.pkl','rb'))
+i2i_sim = pickle.load(open(save_path + 'emb_i2i_sim.pkl', 'rb'))
 
 sim_item_topk = 150
-recall_item_num = 100 # 稍微召回多一点文章，便于后续的规则筛选
+recall_item_num = 100  # 稍微召回多一点文章，便于后续的规则筛选
 
 item_topk_click = get_item_topk_click(trn_hist_click_df, k=50)
 for user in tqdm(trn_hist_click_df['user_id'].unique()):
     user_recall_items_dict[user] = item_based_recommend(user, user_item_time_dict, i2i_sim, sim_item_topk,
-                                                        recall_item_num, item_topk_click,item_created_time_dict, emb_i2i_sim)
+                                                        recall_item_num, item_topk_click, item_created_time_dict,
+                                                        emb_i2i_sim)
 pickle.dump(user_recall_items_dict, open(save_path + 'cold_start_items_raw_dict.pkl', 'wb'))
 
 
@@ -1014,13 +1020,16 @@ def cold_start_items(user_recall_items_dict, user_hist_item_typs_dict, user_hist
 
     return cold_start_user_items_dict
 
+
 all_click_df_ = all_click_df.copy()
 all_click_df_ = all_click_df_.merge(item_info_df, how='left', on='click_article_id')
-user_hist_item_typs_dict, user_hist_item_ids_dict, user_hist_item_words_dict, user_last_item_created_time_dict = get_user_hist_item_info_dict(all_click_df_)
+user_hist_item_typs_dict, user_hist_item_ids_dict, user_hist_item_words_dict, user_last_item_created_time_dict = get_user_hist_item_info_dict(
+    all_click_df_)
 click_article_ids_set = get_click_article_ids_set(all_click_df)
 # 需要注意的是
 # 这里使用了很多规则来筛选冷启动的文章，所以前面再召回的阶段就应该尽可能的多召回一些文章，否则很容易被删掉
-cold_start_user_items_dict = cold_start_items(user_recall_items_dict, user_hist_item_typs_dict, user_hist_item_words_dict, \
+cold_start_user_items_dict = cold_start_items(user_recall_items_dict, user_hist_item_typs_dict,
+                                              user_hist_item_words_dict, \
                                               user_last_item_created_time_dict, item_type_dict, item_words_dict, \
                                               item_created_time_dict, click_article_ids_set, recall_item_num)
 
@@ -1091,6 +1100,7 @@ def combine_recall_results(user_multi_recall_dict, weight_dict=None, topk=25):
 
     return final_recall_items_dict_rank
 
+
 # 这里直接对多路召回的权重给了一个相同的值，其实可以根据前面召回的情况来调整参数的值
 weight_dict = {'itemcf_sim_itemcf_recall': 1.0,
                'embedding_sim_item_recall': 1.0,
@@ -1098,9 +1108,9 @@ weight_dict = {'itemcf_sim_itemcf_recall': 1.0,
                'youtubednn_usercf_recall': 1.0,
                'cold_start_recall': 1.0}
 
-
 # 最终合并之后每个用户召回150个商品进行排序
 final_recall_items_dict_rank = combine_recall_results(user_multi_recall_dict, weight_dict, topk=150)
+print(final_recall_items_dict_rank.keys())
 
 """总结
 上述实现了如下召回策略：
@@ -1111,4 +1121,3 @@ youtubednn召回
 冷启动召回
 对于上述实现的召回策略其实都不是最优的结果，我们只是做了个简单的尝试，其中还有很多地方可以优化，包括已经实现的这些召回策略的参数或者新加一些，修改一些关联规则都可以。当然还可以尝试更多的召回策略，比如对新闻进行热度召回等等。
 """
-
