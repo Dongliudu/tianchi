@@ -419,7 +419,6 @@ def embdding_sim(click_df, item_emb_df, save_path, topk):
 
     # 文章索引与文章id的字典映射
     item_idx_2_rawid_dict = dict(zip(item_emb_df.index, item_emb_df['article_id']))
-    print(item_idx_2_rawid_dict.get(-1))
     item_emb_cols = [x for x in item_emb_df.columns if 'emb' in x]
     item_emb_np = np.ascontiguousarray(item_emb_df[item_emb_cols].values, dtype=np.float32)
     # 向量进行单位化
@@ -430,13 +429,14 @@ def embdding_sim(click_df, item_emb_df, save_path, topk):
     item_index.add(item_emb_np)
     # 相似度查询，给每个索引位置上的向量返回topk个item以及相似度
     sim, idx = item_index.search(item_emb_np, topk)  # 返回的是列表
-    print(idx)
+    print('idx:',idx)
     # 将向量检索的结果保存成原始id的对应关系
     item_sim_dict = collections.defaultdict(dict)
-    for target_idx, sim_value_list, rele_idx_list in tqdm(zip(range(len(item_emb_np)), sim, idx)):
+    for target_idx, sim_value_list, rele_idx_list in tqdm(zip(range(len(item_emb_np)-1), sim, idx)):
         target_raw_id = item_idx_2_rawid_dict[target_idx]
         # 从1开始是为了去掉商品本身, 所以最终获得的相似商品只有topk-1
         for rele_idx, sim_value in zip(rele_idx_list[1:], sim_value_list[1:]):
+            print('rele_idx: ',rele_idx)
             rele_raw_id = item_idx_2_rawid_dict[rele_idx]
             item_sim_dict[target_raw_id][rele_raw_id] = item_sim_dict.get(target_raw_id, {}).get(rele_raw_id,
                                                                                                  0) + sim_value
