@@ -166,7 +166,8 @@ plt.plot(user_click_item_count)
 
 # 点击次数在前50的用户
 plt.plot(user_click_item_count[:50])
-"""点击次数排前50的用户的点击次数都在100次以上。思路：我们可以定义点击次数大于等于100次的用户为活跃用户，这是一种简单的处理思路， 判断用户活跃度，更加全面的是再结合上点击时间，后面我们会基于点击次数和点击时间两个方面来判断用户活跃度。"""
+"""点击次数排前50的用户的点击次数都在100次以上。思路：我们可以定义点击次数大于等于100次的用户为活跃用户，这是一种简单的处理思路， 判断用户活跃度，
+更加全面的是再结合上点击时间，后面我们会基于点击次数和点击时间两个方面来判断用户活跃度。"""
 
 # 点击次数排名在[25000:50000]之间
 plt.plot(user_click_item_count[25000:50000])
@@ -287,7 +288,7 @@ def trian_item_word2vec(click_df, embed_size=16, save_name='item_w2v_emb.pkl', s
     logging.basicConfig(format='%(asctime)s:%(levelname)s:%(message)s', level=logging.INFO)
 
     # 这里的参数对训练得到的向量影响也很大,默认负采样为5
-    w2v = Word2Vec(docs, size=16, sg=1, window=5, seed=2020, workers=24, min_count=1, iter=10)
+    w2v = Word2Vec(docs, vector_size=16, sg=1, window=5, seed=2020, workers=24, min_count=1, epochs=10)
 
     # 保存成字典的形式
     item_w2v_emb_dict = {k: w2v[k] for k in click_df['click_article_id']}
