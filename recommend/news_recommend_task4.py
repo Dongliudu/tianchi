@@ -22,22 +22,22 @@
 # 的形式， 这就是监督测试集时候的前两列特征。
 #
 #
-# 构造特征的思路是这样， 我们知道每个用户的点击文章是与其历史点击的文章信息是有很大关联的， 比如同一个主题， 相似等等。 所以特征构造这块很重要的一系列特征是要结合用户的历史点击文章信息。我们已经得到了每个用户及点击候选文章的两列的一个数据集， 而我们的目的是要预测最后一次点击的文章， 比较自然的一个思路就是和其最后几次点击的文章产生关系， 这样既考虑了其历史点击文章信息， 又得离最后一次点击较近，因为新闻很大的一个特点就是注重时效性。 往往用户的最后一次点击会和其最后几次点击有很大的关联。 所以我们就可以对于每个候选文章， 做出与最后几次点击相关的特征如下：
+# 构造特征的思路是这样， 我们知道每个用户的点击文章是与其历史点击的文章信息是有很大关联的， 比如同一个主题， 相似等等。 所以特征构造这块很重要的一系列特征是要结合用户的历史点击文章信息。
+# 我们已经得到了每个用户及点击候选文章的两列的一个数据集， 而我们的目的是要预测最后一次点击的文章， 比较自然的一个思路就是和其最后几次点击的文章产生关系， 这样既考虑了其历史点击文章信息，
+# 又得离最后一次点击较近，因为新闻很大的一个特点就是注重时效性。 往往用户的最后一次点击会和其最后几次点击有很大的关联。 所以我们就可以对于每个候选文章， 做出与最后几次点击相关的特征如下：
 #
 # 候选item与最后几次点击的相似性特征(embedding内积） --- 这个直接关联用户历史行为
 # 候选item与最后几次点击的相似性特征的统计特征 - -- 统计特征可以减少一些波动和异常
 # 候选item与最后几次点击文章的字数差的特征 - -- 可以通过字数看用户偏好
 # 候选item与最后几次点击的文章建立的时间差特征 - -- 时间差特征可以看出该用户对于文章的实时性的偏好
 # 还需要考虑一下
-# 5.
-# 如果使用了youtube召回的话， 我们还可以制作用户与候选item的相似特征
-#
+# 5.如果使用了youtube召回的话， 我们还可以制作用户与候选item的相似特征
 # 当然， 上面只是提供了一种基于用户历史行为做特征工程的思路， 大家也可以思维风暴一下，尝试一些其他的特征。 下面我们就实现上面的这些特征的制作， 下面的逻辑是这样：
 #
 # 我们首先获得用户的最后一次点击操作和用户的历史点击， 这个基于我们的日志数据集做
 # 基于用户的历史行为制作特征， 这个会用到用户的历史点击表， 最后的召回列表， 文章的信息表和embedding向量
 # 制作标签， 形成最后的监督学习数据集
-#导包
+# 导包
 import numpy as np
 import pandas as pd
 import pickle
@@ -49,14 +49,17 @@ import lightgbm as lgb
 from gensim.models import Word2Vec
 from sklearn.preprocessing import MinMaxScaler
 import warnings
+
 warnings.filterwarnings('ignore')
 warnings.filterwarnings('ignore')
+
+
 # 节省内存的一个函数
 # 减少内存
 def reduce_mem(df):
     starttime = time.time()
     numerics = ['int16', 'int32', 'int64', 'float16', 'float32', 'float64']
-    start_mem = df.memory_usage().sum() / 1024**2
+    start_mem = df.memory_usage().sum() / 1024 ** 2
     for col in df.columns:
         col_type = df[col].dtypes
         if col_type in numerics:
@@ -80,20 +83,25 @@ def reduce_mem(df):
                     df[col] = df[col].astype(np.float32)
                 else:
                     df[col] = df[col].astype(np.float64)
-    end_mem = df.memory_usage().sum() / 1024**2
+    end_mem = df.memory_usage().sum() / 1024 ** 2
     print('-- Mem. usage decreased to {:5.2f} Mb ({:.1f}% reduction),time spend:{:2.2f} min'.format(end_mem,
-                                                                                                           100*(start_mem-end_mem)/start_mem,
-                                                                                                           (time.time()-starttime)/60))
+                                                                                                    100 * (start_mem - end_mem) / start_mem,
+                                                                                                    (time.time() - starttime) / 60))
     return df
 
 
-data_path = './data_raw/'
+data_path = '/Users/a58/PycharmProjects/data/'
 save_path = './temp_results/'
+
+
 # 数据读取
 # 训练和验证集的划分
-# 划分训练和验证集的原因是为了在线下验证模型参数的好坏，为了完全模拟测试集，我们这里就在训练集中抽取部分用户的所有信息来作为验证集。提前做训练验证集划分的好处就是可以分解制作排序特征时的压力，一次性做整个数据集的排序特征可能时间会比较长。
+# 划分训练和验证集的原因是为了在线下验证模型参数的好坏，为了完全模拟测试集，我们这里就在训练集中抽取部分用户的所有信息来作为验证集。提前做训练验证集划分的好处就是可以分解制作排序特征时的压力，
+# 一次性做整个数据集的排序特征可能时间会比较长。
 # all_click_df指的是训练集
 # sample_user_nums 采样作为验证集的用户数量
+
+
 def trn_val_split(all_click_df, sample_user_nums):
     all_click = all_click_df
     all_user_ids = all_click.user_id.unique()
@@ -117,6 +125,7 @@ def trn_val_split(all_click_df, sample_user_nums):
 
     return click_trn, click_val, val_ans
 
+
 # 获取历史点击和最后一次点击
 # 获取当前数据的历史点击和最后一次点击
 def get_hist_and_last_click(all_click):
@@ -133,6 +142,8 @@ def get_hist_and_last_click(all_click):
     click_hist_df = all_click.groupby('user_id').apply(hist_func).reset_index(drop=True)
 
     return click_hist_df, click_last_df
+
+
 # 读取训练、验证及测试集
 def get_trn_val_tst_data(data_path, offline=True):
     if offline:
@@ -149,6 +160,7 @@ def get_trn_val_tst_data(data_path, offline=True):
 
     return click_trn, click_val, click_tst, val_ans
 
+
 # 读取召回列表
 # 返回多路召回列表或者单路召回
 def get_recall_list(save_path, single_recall_model=None, multi_recall=False):
@@ -163,6 +175,8 @@ def get_recall_list(save_path, single_recall_model=None, multi_recall=False):
         return pickle.load(open(save_path + 'youtubednn_usercf_dict.pkl', 'rb'))
     elif single_recall_model == 'youtubednn':
         return pickle.load(open(save_path + 'youtube_u2i_dict.pkl', 'rb'))
+
+
 # 读取各种Embedding
 # Word2Vec训练及gensim的使用
 # Word2Vec主要思想是：一个词的上下文可以很好的表达出词的语义。通过无监督学习产生词向量的方式。word2vec中有两个非常经典的模型：skip - gram和cbow。
@@ -230,12 +244,14 @@ def get_embedding(save_path, all_click_df):
 
     return item_content_emb_dict, item_w2v_emb_dict, item_youtube_emb_dict, user_youtube_emb_dict
 
+
 # 读取文章信息
 def get_article_info_df():
     article_info_df = pd.read_csv(data_path + 'articles.csv')
     article_info_df = reduce_mem(article_info_df)
 
     return article_info_df
+
 
 # 读取数据
 # 这里offline的online的区别就是验证集是否为空
@@ -248,6 +264,7 @@ else:
     click_val_hist, click_val_last = None, None
 
 click_tst_hist = click_tst
+
 
 # 对训练数据做负采样
 # 通过召回我们将数据转换成三元组的形式（user1, item1, label）的形式，观察发现正负样本差距极度不平衡，我们可以先对负样本进行下采样，下采样的目的一方面缓解了正负样本比例的问题，另一方面也减小了我们做排序特征的压力，我们在做负采样的时候又有哪些东西是需要注意的呢？
@@ -341,10 +358,9 @@ def get_user_recall_item_label_df(click_trn_hist, click_val_hist, click_tst_hist
 
 
 # 读取召回列表
-recall_list_dict = get_recall_list(save_path, single_recall_model='i2i_itemcf') # 这里只选择了单路召回的结果，也可以选择多路召回结果
+recall_list_dict = get_recall_list(save_path, single_recall_model='i2i_itemcf')  # 这里只选择了单路召回的结果，也可以选择多路召回结果
 # 将召回数据转换成df
 recall_list_df = recall_dict_2_df(recall_list_dict)
-
 
 # 给训练验证数据打标签，并负采样（这一部分时间比较久）
 trn_user_item_label_df, val_user_item_label_df, tst_user_item_label_df = get_user_recall_item_label_df(click_trn_hist,
@@ -451,6 +467,7 @@ def create_feature(users_id, recall_list, click_hist_df, articles_info, articles
 
     return df
 
+
 article_info_df = get_article_info_df()
 all_click = click_trn.append(click_tst)
 item_content_emb_dict, item_w2v_emb_dict, item_youtube_emb_dict, user_youtube_emb_dict = get_embedding(save_path, all_click)
@@ -467,7 +484,6 @@ else:
 
 tst_user_item_feats_df = create_feature(tst_user_item_label_tuples_dict.keys(), tst_user_item_label_tuples_dict, \
                                         click_tst_hist, article_info_df, item_content_emb_dict)
-
 
 # 保存一份省的每次都要重新跑，每次跑的时间都比较长
 trn_user_item_feats_df.to_csv(save_path + 'trn_user_item_feats_df.csv', index=False)
@@ -491,7 +507,7 @@ tst_user_item_feats_df.to_csv(save_path + 'tst_user_item_feats_df.csv', index=Fa
 # 用户的字数爱好特征， 对于用户点击的历史文章的字数统计， 求一个均值
 
 # 读取文章特征
-articles =  pd.read_csv(data_path+'articles.csv')
+articles = pd.read_csv(data_path + 'articles.csv')
 articles = reduce_mem(articles)
 
 # 日志数据，就是前面的所有数据
@@ -502,6 +518,7 @@ all_data = reduce_mem(all_data)
 
 # 拼上文章信息
 all_data = all_data.merge(articles, left_on='click_article_id', right_on='article_id')
+
 
 # 分析一下点击时间和点击文章的次数，区分用户活跃度
 # 如果某个用户点击文章之间的时间间隔比较小， 同时点击的文章次数很多的话， 那么我们认为这种用户一般就是活跃用户, 当然衡量用户活跃度的方式可能多种多样， 这里我们只提供其中一种，我们写一个函数， 得到可以衡量用户活跃度的特征，逻辑如下：
@@ -538,9 +555,9 @@ def active_level(all_data, cols):
 
     # 两者归一化
     user_act['click_size'] = (user_act['click_size'] - user_act['click_size'].min()) / (
-                user_act['click_size'].max() - user_act['click_size'].min())
+            user_act['click_size'].max() - user_act['click_size'].min())
     user_act['time_diff_mean'] = (user_act['time_diff_mean'] - user_act['time_diff_mean'].min()) / (
-                user_act['time_diff_mean'].max() - user_act['time_diff_mean'].min())
+            user_act['time_diff_mean'].max() - user_act['time_diff_mean'].min())
     user_act['active_level'] = user_act['click_size'] + user_act['time_diff_mean']
 
     user_act['user_id'] = user_act['user_id'].astype('int')
@@ -550,6 +567,7 @@ def active_level(all_data, cols):
 
 
 user_act_fea = active_level(all_data, ['user_id', 'click_article_id', 'click_timestamp'])
+
 
 # 分析一下点击时间和被点击文章的次数， 衡量文章热度特征
 # 和上面同样的思路， 如果一篇文章在很短的时间间隔之内被点击了很多次， 说明文章比较热门，实现的逻辑和上面的基本一致， 只不过这里是按照点击的文章进行分组：
@@ -584,9 +602,9 @@ def hot_level(all_data, cols):
 
     # 两者归一化
     article_hot['user_num'] = (article_hot['user_num'] - article_hot['user_num'].min()) / (
-                article_hot['user_num'].max() - article_hot['user_num'].min())
+            article_hot['user_num'].max() - article_hot['user_num'].min())
     article_hot['time_diff_mean'] = (article_hot['time_diff_mean'] - article_hot['time_diff_mean'].min()) / (
-                article_hot['time_diff_mean'].max() - article_hot['time_diff_mean'].min())
+            article_hot['time_diff_mean'].max() - article_hot['time_diff_mean'].min())
     article_hot['hot_level'] = article_hot['user_num'] + article_hot['time_diff_mean']
 
     article_hot['click_article_id'] = article_hot['click_article_id'].astype('int')
@@ -595,7 +613,9 @@ def hot_level(all_data, cols):
 
     return article_hot
 
+
 article_hot_fea = hot_level(all_data, ['user_id', 'click_article_id', 'click_timestamp'])
+
 
 # 用户的系列习惯
 # 这个基于原来的日志表做一个类似于article的那种DataFrame， 存放用户特有的信息, 主要包括点击习惯， 爱好特征之类的
@@ -621,9 +641,11 @@ def device_fea(all_data, cols):
 
     return user_device_info
 
+
 # 设备特征(这里时间会比较长)
 device_cols = ['user_id', 'click_environment', 'click_deviceGroup', 'click_os', 'click_country', 'click_region', 'click_referrer_type']
 user_device_info = device_fea(all_data, device_cols)
+
 
 # 用户的时间习惯¶
 def user_time_hob_fea(all_data, cols):
@@ -645,8 +667,10 @@ def user_time_hob_fea(all_data, cols):
                               inplace=True)
     return user_time_hob_info
 
+
 user_time_hob_cols = ['user_id', 'click_timestamp', 'created_at_ts']
 user_time_hob_info = user_time_hob_fea(all_data, user_time_hob_cols)
+
 
 # 用户的主题爱好
 # 这里先把用户点击的文章属于的主题转成一个列表， 后面再总的汇总的时候单独制作一个特征， 就是文章的主题如果属于这里面， 就是1， 否则就是0。
@@ -665,6 +689,7 @@ def user_cat_hob_fea(all_data, cols):
     user_cat_hob_info['cate_list'] = user_category_hob_info['category_id']
 
     return user_cat_hob_info
+
 
 user_category_hob_cols = ['user_id', 'category_id']
 user_cat_hob_info = user_cat_hob_fea(all_data, user_category_hob_cols)
@@ -710,9 +735,9 @@ else:
 
 tst_user_item_feats_df = tst_user_item_feats_df.merge(user_info, on='user_id', how='left')
 
-#文章的特征直接读入
+# 文章的特征直接读入
 
-articles =  pd.read_csv(data_path+'articles.csv')
+articles = pd.read_csv(data_path + 'articles.csv')
 articles = reduce_mem(articles)
 # 拼上文章特征
 trn_user_item_feats_df = trn_user_item_feats_df.merge(articles, left_on='click_article_id', right_on='article_id')
@@ -751,7 +776,6 @@ else:
 
 del tst_user_item_feats_df['article_id']
 
-
 # 保存特征
 # 训练验证特征
 trn_user_item_feats_df.to_csv(save_path + 'trn_user_item_feats_df.csv', index=False)
@@ -764,9 +788,3 @@ tst_user_item_feats_df.to_csv(save_path + 'tst_user_item_feats_df.csv', index=Fa
 # 特征工程可以一步增强数据的表达能力，通过构造新特征，我们可以挖掘出数据的更多信息，使得数据的表达能力进一步放大。 在本节内容中，我们主要是先通过制作特征和标签
 # 把预测问题转成了监督学习问题，然后围绕着用户画像和文章画像进行一系列特征的制作， 此外，为了保证正负样本的数据均衡，我们还学习了负采样就技术等。当然本节内容只
 # 是对构造特征提供了一些思路，也请学习者们在学习过程中开启头脑风暴，尝试更多的构造特征的方法，也欢迎我们一块探讨和交流。
-
-
-
-
-
-

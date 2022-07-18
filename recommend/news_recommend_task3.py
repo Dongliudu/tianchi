@@ -138,7 +138,7 @@ def get_trn_val_tst_data(data_path, offline=True):
     if offline:
         click_trn_data = pd.read_csv(data_path + 'train_click_log.csv')  # 训练集用户点击日志
         click_trn_data = reduce_mem(click_trn_data)
-        click_trn, click_val, val_ans = trn_val_split(click_trn_data, sample_user_nums)
+        click_trn, click_val, val_ans = trn_val_split(click_trn_data, sample_user_nums=1000)
     else:
         click_trn = pd.read_csv(data_path + 'train_click_log.csv')
         click_trn = reduce_mem(click_trn)
@@ -232,7 +232,8 @@ click_tst_hist = click_tst
 
 """
 对训练数据做负采样
-通过召回我们将数据转换成三元组的形式（user1, item1, label）的形式，观察发现正负样本差距极度不平衡，我们可以先对负样本进行下采样，下采样的目的一方面缓解了正负样本比例的问题，另一方面也减小了我们做排序特征的压力，我们在做负采样的时候又有哪些东西是需要注意的呢？
+通过召回我们将数据转换成三元组的形式（user1, item1, label）的形式，观察发现正负样本差距极度不平衡，我们可以先对负样本进行下采样，下采样的目的一方面缓解了正负样本比例的问题，
+另一方面也减小了我们做排序特征的压力，我们在做负采样的时候又有哪些东西是需要注意的呢？
 
 只对负样本进行下采样(如果有比较好的正样本扩充的方法其实也是可以考虑的)
 负采样之后，保证所有的用户和文章仍然出现在采样之后的数据中

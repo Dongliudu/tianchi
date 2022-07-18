@@ -6,6 +6,8 @@
 ------------   -------   --------   -----------
 2022/1/18 7:14 下午   ghj      1.0         召回
 """
+import time
+
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
@@ -23,11 +25,16 @@ from sklearn.preprocessing import LabelEncoder
 from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.models import Model
 from tensorflow.python.keras.preprocessing.sequence import pad_sequences
+from tensorflow.python.keras import backend as K
+import tensorflow as tf
 
 from deepmatch.models import *
 from deepmatch.utils import sampledsoftmaxloss
 
 warnings.filterwarnings('ignore')
+K.set_learning_phase(True)
+if tf.__version__ >= '2.0.0':
+    tf.compat.v1.disable_eager_execution()
 # 多路召回
 # 所谓的“多路召回”策略，就是指采用不同的策略、特征或简单模型，分别召回一部分候选集，然后把候选集混合在一起供后续排序模型使用，可以明显的看出，
 # “多路召回策略”是在“计算速度”和“召回率”之间进行权衡的结果。其中，各种简单策略保证候选集的快速召回，从不同角度设计的策略保证召回率接近理想的状态，
@@ -42,10 +49,12 @@ metric_recall = False
 
 """读取数据
 在一般的rs比赛中读取数据部分主要分为三种模式， 不同的模式对应的不同的数据集：
-
-debug模式： 这个的目的是帮助我们基于数据先搭建一个简易的baseline并跑通， 保证写的baseline代码没有什么问题。 由于推荐比赛的数据往往非常巨大， 如果一上来直接采用全部的数据进行分析，搭建baseline框架， 往往会带来时间和设备上的损耗， 所以这时候我们往往需要从海量数据的训练集中随机抽取一部分样本来进行调试(train_click_log_sample)， 先跑通一个baseline。
-线下验证模式： 这个的目的是帮助我们在线下基于已有的训练集数据， 来选择好合适的模型和一些超参数。 所以我们这一块只需要加载整个训练集(train_click_log)， 然后把整个训练集再分成训练集和验证集。 训练集是模型的训练数据， 验证集部分帮助我们调整模型的参数和其他的一些超参数。
-线上模式： 我们用debug模式搭建起一个推荐系统比赛的baseline， 用线下验证模式选择好了模型和一些超参数， 这一部分就是真正的对于给定的测试集进行预测， 提交到线上， 所以这一块使用的训练数据集是全量的数据集(train_click_log+test_click_log)
+debug模式： 这个的目的是帮助我们基于数据先搭建一个简易的baseline并跑通， 保证写的baseline代码没有什么问题。 由于推荐比赛的数据往往非常巨大， 如果一上来直接采用全部的数据进行分析，搭建
+baseline框架， 往往会带来时间和设备上的损耗， 所以这时候我们往往需要从海量数据的训练集中随机抽取一部分样本来进行调试(train_click_log_sample)， 先跑通一个baseline。
+线下验证模式： 这个的目的是帮助我们在线下基于已有的训练集数据， 来选择好合适的模型和一些超参数。 所以我们这一块只需要加载整个训练集(train_click_log)， 然后把整个训练集再分成训练集和验证集。 
+训练集是模型的训练数据， 验证集部分帮助我们调整模型的参数和其他的一些超参数。
+线上模式： 我们用debug模式搭建起一个推荐系统比赛的baseline， 用线下验证模式选择好了模型和一些超参数， 这一部分就是真正的对于给定的测试集进行预测， 提交到线上， 所以这一块使用的训练数据集是
+全量的数据集(train_click_log+test_click_log)
 下面就分别对这三种不同的数据读取模式先建立不同的代导入函数， 方便后面针对不同的模式下导入数据。"""
 
 
@@ -61,13 +70,12 @@ def get_all_click_sample(data_path, sample_nums=10000):
 
     sample_user_ids = np.random.choice(all_user_ids, size=sample_nums, replace=False)
     all_click = all_click[all_click['user_id'].isin(sample_user_ids)]
-
+    # 去重
     all_click = all_click.drop_duplicates((['user_id', 'click_article_id', 'click_timestamp']))
     return all_click
 
 
-# 读取点击数据，这里分成线上和线下，如果是为了获取线上提交结果应该讲测试集中的点击数据合并到总的数据中
-# 如果是为了线下验证模型的有效性或者特征的有效性，可以只使用训练集
+# 读取点击数据，这里分成线上和线下，如果是为了获取线上提交结果应该讲测试集中的点击数据合并到总的数据中,如果是为了线下验证模型的有效性或者特征的有效性，可以只使用训练集
 def get_all_click_df(data_path, offline=True):
     if offline:
         all_click = pd.read_csv(data_path + 'train_click_log.csv')
@@ -109,10 +117,10 @@ def get_item_emb_dict(data_path):
 max_min_scaler = lambda x: (x - np.min(x)) / (np.max(x) - np.min(x))
 
 # 采样数据
-all_click_df = get_all_click_sample(data_path)
+# all_click_df = get_all_click_sample(data_path)
 
 # 全量训练集
-# all_click_df = get_all_click_df(offline=False)
+all_click_df = get_all_click_df(data_path,offline=True)
 
 # 对时间戳进行归一化,用于在关联规则的时候计算权重
 all_click_df['click_timestamp'] = all_click_df[['click_timestamp']].apply(max_min_scaler)
@@ -429,14 +437,12 @@ def embdding_sim(click_df, item_emb_df, save_path, topk):
     item_index.add(item_emb_np)
     # 相似度查询，给每个索引位置上的向量返回topk个item以及相似度
     sim, idx = item_index.search(item_emb_np, topk)  # 返回的是列表
-    print('idx:',idx)
     # 将向量检索的结果保存成原始id的对应关系
     item_sim_dict = collections.defaultdict(dict)
-    for target_idx, sim_value_list, rele_idx_list in tqdm(zip(range(len(item_emb_np)-1), sim, idx)):
+    for target_idx, sim_value_list, rele_idx_list in tqdm(zip(range(len(item_emb_np) - 1), sim, idx)):
         target_raw_id = item_idx_2_rawid_dict[target_idx]
         # 从1开始是为了去掉商品本身, 所以最终获得的相似商品只有topk-1
         for rele_idx, sim_value in zip(rele_idx_list[1:], sim_value_list[1:]):
-            print('rele_idx: ',rele_idx)
             rele_raw_id = item_idx_2_rawid_dict[rele_idx]
             item_sim_dict[target_raw_id][rele_raw_id] = item_sim_dict.get(target_raw_id, {}).get(rele_raw_id,
                                                                                                  0) + sim_value
@@ -624,6 +630,7 @@ def youtubednn_u2i_dict(data, topk=20):
 
 
 # 由于这里需要做召回评估，所以讲训练集中的最后一次点击都提取了出来
+
 if not metric_recall:
     user_multi_recall_dict['youtubednn_recall'] = youtubednn_u2i_dict(all_click_df, topk=20)
 else:
@@ -660,6 +667,7 @@ def item_based_recommend(user_id, user_item_time_dict, i2i_sim, sim_item_topk, r
     user_hist_items_ = {user_id for user_id, _ in user_hist_items}
 
     item_rank = {}
+    print(i2i_sim.keys)
     for loc, (i, click_time) in enumerate(user_hist_items):
         for j, wij in sorted(i2i_sim[i].items(), key=lambda x: x[1], reverse=True)[:sim_item_topk]:
             if j in user_hist_items_:
@@ -712,8 +720,8 @@ recall_item_num = 10
 item_topk_click = get_item_topk_click(trn_hist_click_df, k=50)
 
 for user in tqdm(trn_hist_click_df['user_id'].unique()):
-    user_recall_items_dict[user] = item_based_recommend(user, user_item_time_dict, \
-                                                        i2i_sim, sim_item_topk, recall_item_num, \
+    user_recall_items_dict[user] = item_based_recommend(user, user_item_time_dict,
+                                                        i2i_sim, sim_item_topk, recall_item_num,
                                                         item_topk_click, item_created_time_dict, emb_i2i_sim)
 
 user_multi_recall_dict['itemcf_sim_itemcf_recall'] = user_recall_items_dict
@@ -910,7 +918,7 @@ recall_item_num = 10
 
 item_topk_click = get_item_topk_click(trn_hist_click_df, k=50)
 for user in tqdm(trn_hist_click_df['user_id'].unique()):
-    user_recall_items_dict[user] = user_based_recommend(user, user_item_time_dict, u2u_sim, sim_user_topk, \
+    user_recall_items_dict[user] = user_based_recommend(user, user_item_time_dict, u2u_sim, sim_user_topk,
                                                         recall_item_num, item_topk_click, item_created_time_dict,
                                                         emb_i2i_sim)
 
@@ -1121,3 +1129,4 @@ youtubednn召回
 冷启动召回
 对于上述实现的召回策略其实都不是最优的结果，我们只是做了个简单的尝试，其中还有很多地方可以优化，包括已经实现的这些召回策略的参数或者新加一些，修改一些关联规则都可以。当然还可以尝试更多的召回策略，比如对新闻进行热度召回等等。
 """
+

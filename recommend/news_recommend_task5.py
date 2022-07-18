@@ -650,7 +650,8 @@ rank_results = finall_tst_ranker_feats[['user_id', 'click_article_id', 'pred_sco
 submit(rank_results, topk=5, model_name='ensumble_staking')
 
 # 总结
-# 本章主要学习了三个排序模型，包括LGB的Rank， LGB的Classifier还有深度学习的DIN模型， 当然，对于这三个模型的原理部分，我们并没有给出详细的介绍， 请大家课下自己探索原理，也欢迎大家把自己的探索与所学分享出来，我们一块学习和进步。最后，我们进行了简单的模型融合策略，包括简单的加权和Stacking。
+# 本章主要学习了三个排序模型，包括LGB的Rank， LGB的Classifier还有深度学习的DIN模型， 当然，对于这三个模型的原理部分，我们并没有给出详细的介绍， 请大家课下自己探索原理，
+# 也欢迎大家把自己的探索与所学分享出来，我们一块学习和进步。最后，我们进行了简单的模型融合策略，包括简单的加权和Stacking。
 
 
 
